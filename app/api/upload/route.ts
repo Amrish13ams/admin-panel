@@ -1,49 +1,35 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { query } from "@/lib/database"
-import { uploadToB2 } from "@/lib/backblaze-b2"
+import { NextRequest, NextResponse } from "next/server";
+import B2 from "backblaze-b2";
 
-export async function POST(request: NextRequest) {
+export const POST = async (req: NextRequest) => {
   try {
-    // Parse form data
-    const formData = await request.formData()
-    const file = formData.get("file") as File
-    const folder = (formData.get("folder") as string) || "products"
-    const companyId = formData.get("companyId") as string
+    const b2 = new B2({
+      applicationKeyId: process.env.B2_KEY_ID!,
+      applicationKey: process.env.B2_APPLICATION_KEY!,
+    });
+    await b2.authorize();
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
-    }
+    const formData = await req.formData();
+    const file = formData.get("file") as unknown as File;
+    const folder = formData.get("folder")?.toString() || "products";
 
-    if (!companyId) {
-      return NextResponse.json({ error: "Company ID is required" }, { status: 400 })
-    }
+    if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
-    const companyResult = await query("SELECT id FROM companies WHERE id = $1", [companyId])
+    const arrayBuffer = await file.arrayBuffer();
+    const fileName = `${folder}/${Date.now()}-${file.name}`;
 
-    if (companyResult.rows.length === 0) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 })
-    }
+    const { uploadUrl, authorizationToken } = (await b2.getUploadUrl({ bucketId: process.env.B2_BUCKET_ID! })).data;
 
-    const company = companyResult.rows[0]
+    await b2.uploadFile({
+      uploadUrl,
+      uploadAuthToken: authorizationToken,
+      fileName,
+      data: Buffer.from(arrayBuffer),
+    });
 
-    // Validate file type
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "model/gltf-binary", "model/vnd.usdz+zip"]
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: "Invalid file type" }, { status: 400 })
-    }
-
-    // Validate file size (max 50MB)
-    const maxSize = 50 * 1024 * 1024 // 50MB
-    if (file.size > maxSize) {
-      return NextResponse.json({ error: "File too large" }, { status: 400 })
-    }
-
-    // Upload to Backblaze B2
-    const downloadUrl = await uploadToB2(file, `${folder}/company-${company.id}`)
-
-    return NextResponse.json({ url: downloadUrl })
-  } catch (error) {
-    console.error("Upload error:", error)
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 })
+    return NextResponse.json({ fileKey: fileName });
+  } catch (err) {
+    console.error("Upload failed:", err);
+    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
-}
+};
