@@ -9,6 +9,7 @@ interface FileUploadProps {
   onFileSelect: (file: File) => Promise<void>
   currentFileName?: string
   accept?: string
+  capture?: "user" | "environment"
   className?: string
   onRemove?: () => void
 }
@@ -17,6 +18,7 @@ export function FileUpload({
   onFileSelect,
   currentFileName,
   accept = "image/*",
+  capture = "environment", // default to rear camera on mobile
   className,
   onRemove,
 }: FileUploadProps) {
@@ -68,7 +70,7 @@ export function FileUpload({
           ) : (
             <>
               <FileImage className="mx-auto" />
-              <p className="text-sm mt-2">{currentFileName ? currentFileName : "Click to select or drag & drop file"}</p>
+              <p className="text-sm mt-2">{currentFileName ? currentFileName : "Click to select or take a photo"}</p>
             </>
           )}
         </div>
@@ -77,6 +79,7 @@ export function FileUpload({
         ref={fileInputRef}
         type="file"
         accept={accept}
+        capture={capture}   // <-- enables mobile camera capture
         onChange={handleChange}
         className="hidden"
       />

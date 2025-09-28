@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Edit, MoreHorizontal, Trash2, Eye, Search, Cable as Cube } from "lucide-react"
+import { Edit, Trash2, Search, Cable as Cube } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -33,10 +32,11 @@ interface ProductsTableProps {
 export function ProductsTable({ products, companyId }: ProductsTableProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [isDeleting, setIsDeleting] = useState<number | null>(null)
+  const [productList, setProductList] = useState(products)
   const router = useRouter()
   const isMobile = useIsMobile()
 
-  const filteredProducts = products.filter(
+  const filteredProducts = productList.filter(
     (product) =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.category.toLowerCase().includes(searchTerm.toLowerCase()),
@@ -44,22 +44,22 @@ export function ProductsTable({ products, companyId }: ProductsTableProps) {
 
   const handleDelete = async (productId: number) => {
     if (!confirm("Are you sure you want to delete this product?")) return
-  
+
     setIsDeleting(productId)
-  
+
     try {
       const response = await fetch(`/api/products?product_id=${productId}`, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ company_id: companyId }),
       })
-  
-      if (!response.ok) {
-        throw new Error("Failed to delete product")
-      }
-  
+
+      if (!response.ok) throw new Error("Failed to delete product")
+
+      // Remove deleted product from local state for instant UI update
+      setProductList(prev => prev.filter(p => p.id !== productId))
+
+      // Optionally refresh router to sync server state
       router.refresh()
     } catch (error) {
       console.error("Error deleting product:", error)
@@ -73,23 +73,20 @@ export function ProductsTable({ products, companyId }: ProductsTableProps) {
     try {
       const response = await fetch("/api/ar-requests", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          productId: productId,
-          companyId: companyId,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, companyId }),
       })
 
       const result = await response.json()
 
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to create AR request")
-      }
+      if (!response.ok) throw new Error(result.error || "Failed to create AR request")
+
+      // Update local product list instantly
+      setProductList(prev =>
+        prev.map(p => (p.id === productId ? { ...p, has_ar: true } : p))
+      )
 
       alert("AR request submitted successfully!")
-      router.refresh()
     } catch (error) {
       console.error("Error requesting AR:", error)
       alert(`Failed to submit AR request: ${error instanceof Error ? error.message : "Unknown error"}`)
