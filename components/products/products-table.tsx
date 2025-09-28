@@ -176,7 +176,7 @@ export function ProductsTable({ products, companyId }: ProductsTableProps) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex gap-1 justify-end">
-                      <Button
+                      {/* <Button
                         variant="outline"
                         size="sm"
                         asChild
@@ -185,7 +185,7 @@ export function ProductsTable({ products, companyId }: ProductsTableProps) {
                         <Link href={`/dashboard/products/${product.id}/edit`}>
                           <Edit className="h-4 w-4" />
                         </Link>
-                      </Button> 
+                      </Button>  */}
                       <Button
                         variant="outline"
                         size="sm"
