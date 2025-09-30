@@ -1,7 +1,6 @@
 "use client"
 
-import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FileUpload } from "@/components/ui/file-upload"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
-
 import { uploadToB2, getSignedUrl } from "@/lib/backblaze"
 
 interface Product {
@@ -70,41 +68,46 @@ export function ProductForm({ companyId, product }: ProductFormProps) {
     image_4: product?.image_4 || "",
   })
 
+  const uploadRef = useRef<Record<string, boolean>>({})
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
 
+  // Fetch signed URLs for preview
   useEffect(() => {
-    async function fetchSignedUrls() {
+    async function fetchUrls() {
       const urls: Record<string, string> = {}
       for (const key of ["image_1", "image_2", "image_3", "image_4"] as (keyof Product)[]) {
         if (formData[key]) {
           try {
             urls[key] = await getSignedUrl(formData[key]!)
           } catch (err) {
-            console.error(`Failed to get signed URL for ${key}:`, err)
+            console.error(err)
           }
         }
       }
       setSignedUrls(urls)
     }
-    fetchSignedUrls()
+    fetchUrls()
   }, [formData.image_1, formData.image_2, formData.image_3, formData.image_4])
 
-  const handleImageUpload = async (imageKey: keyof Product, file: File) => {
+  const handleFileSelect = async (imageKey: keyof Product, file: File) => {
+    if (uploadRef.current[imageKey]) return
+    uploadRef.current[imageKey] = true
+
     try {
-      setIsLoading(true)
       const fileKey = await uploadToB2(file, "products")
-      console.log("Uploaded fileKey:", fileKey)
+      sessionStorage.setItem(imageKey, JSON.stringify({ fileKey, fileName: file.name }))
       setFormData((prev) => ({ ...prev, [imageKey]: fileKey }))
     } catch (err) {
-      console.error("Image upload failed:", err)
+      console.error(err)
       alert("Failed to upload image")
     } finally {
-      setIsLoading(false)
+      uploadRef.current[imageKey] = false
     }
   }
 
   const removeImage = (imageKey: keyof Product) => {
     setFormData((prev) => ({ ...prev, [imageKey]: "" }))
+    sessionStorage.removeItem(imageKey)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -127,12 +130,15 @@ export function ProductForm({ companyId, product }: ProductFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
-
       if (!res.ok) throw new Error((await res.json()).error || "Failed to save product")
+
+      // Clear session storage after successful save
+      ;["image_1", "image_2", "image_3", "image_4"].forEach((key) => sessionStorage.removeItem(key))
+
       router.push("/dashboard/products")
-    } catch (error) {
-      console.error(error)
-      alert(`Error saving product: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } catch (err) {
+      console.error(err)
+      alert(`Error saving product: ${err instanceof Error ? err.message : "Unknown error"}`)
     } finally {
       setIsLoading(false)
     }
@@ -150,43 +156,36 @@ export function ProductForm({ companyId, product }: ProductFormProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* MAIN INFO */}
+        {/* Main info */}
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Product Information</CardTitle>
+              <CardTitle>Product Info</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <InputField label="Product Name *" value={formData.name} onChange={(v) => setFormData((prev) => ({ ...prev, name: v }))} />
-                <div className="space-y-2">
-                  <Label htmlFor="category">Category *</Label>
-                  <Select value={formData.category} onValueChange={(v) => setFormData((prev) => ({ ...prev, category: v }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <InputField label="Product Name" value={formData.name} onChange={(v) => setFormData((prev) => ({ ...prev, name: v }))} />
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select value={formData.category} onValueChange={(v) => setFormData((prev) => ({ ...prev, category: v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-
               <InputField label="Description" value={formData.description} onChange={(v) => setFormData((prev) => ({ ...prev, description: v }))} />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <InputField label="Price *" value={formData.price.toString()} onChange={(v) => setFormData((prev) => ({ ...prev, price: Number(v) }))} />
-                <InputField
-                  label="Discount Price"
-                  value={formData.discount_price?.toString() || ""}
-                  onChange={(v) => setFormData((prev) => ({ ...prev, discount_price: v ? Number(v) : undefined }))}
-                />
-              </div>
+              <InputField label="Price" value={formData.price.toString()} onChange={(v) => setFormData((prev) => ({ ...prev, price: Number(v) }))} />
+              <InputField label="Discount Price" value={formData.discount_price?.toString() || ""} onChange={(v) => setFormData((prev) => ({ ...prev, discount_price: v ? Number(v) : undefined }))} />
             </CardContent>
           </Card>
 
+          {/* ✅ Product Details section added back */}
           <Card>
             <CardHeader>
               <CardTitle>Product Details</CardTitle>
@@ -200,29 +199,23 @@ export function ProductForm({ companyId, product }: ProductFormProps) {
           </Card>
         </div>
 
-        {/* IMAGES & STATUS */}
+        {/* Images & Status */}
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Product Images</CardTitle>
+              <CardTitle>Images</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {[1, 2, 3, 4].map((index) => {
-                const key = `image_${index}` as keyof Product
+              {(["image_1", "image_2", "image_3", "image_4"] as (keyof Product)[]).map((k) => {
+                const currentFileName = (() => {
+                  const data = sessionStorage.getItem(k)
+                  if (data) return JSON.parse(data).fileName
+                  return ""
+                })()
                 return (
-                  <div key={index} className="space-y-2">
-                    <Label>Image {index}</Label>
-                    <FileUpload
-                      currentUrl={signedUrls[key] || ""}
-                      onUpload={(file) => handleImageUpload(key, file)}
-                      onRemove={() => removeImage(key)}
-                      accept="image/*"
-                      folder="products"
-                      capture="environment" // ✅ allows mobile camera capture
-                      className="w-full"
-                      companyId={companyId.toString()}
-                    />
-                    {formData[key] && <p className="text-sm text-gray-500">📂 {formData[key]}</p>}
+                  <div key={k} className="space-y-2">
+                    <Label>{k}</Label>
+                    <FileUpload currentFileName={currentFileName} onFileSelect={(file) => handleFileSelect(k, file)} onRemove={() => removeImage(k)} accept="image/*" capture="environment" />
                   </div>
                 )
               })}
@@ -234,7 +227,7 @@ export function ProductForm({ companyId, product }: ProductFormProps) {
               <CardTitle>Status</CardTitle>
             </CardHeader>
             <CardContent>
-              <Label htmlFor="status">Product Status</Label>
+              <Label>Status</Label>
               <Select value={formData.status} onValueChange={(v) => setFormData((prev) => ({ ...prev, status: v }))}>
                 <SelectTrigger>
                   <SelectValue />
@@ -254,7 +247,7 @@ export function ProductForm({ companyId, product }: ProductFormProps) {
         <Button variant="outline" asChild>
           <Link href="/dashboard/products">Cancel</Link>
         </Button>
-        <Button type="submit" disabled={isLoading} className="bg-emerald-600 hover:bg-emerald-700">
+        <Button type="submit" disabled={isLoading}>
           {isLoading ? "Saving..." : product?.id ? "Update Product" : "Create Product"}
         </Button>
       </div>
@@ -262,7 +255,6 @@ export function ProductForm({ companyId, product }: ProductFormProps) {
   )
 }
 
-// --- Helper component ---
 function InputField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="space-y-2">
